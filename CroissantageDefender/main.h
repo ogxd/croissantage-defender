@@ -3,7 +3,9 @@
 #include <iostream>
 #include <windows.h>
 #include <stdio.h>
-#include <vfw.h>
+
+#include <dshow.h>
+#include <strsafe.h>
 
 static BOOL locked = false;
 
