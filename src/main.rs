@@ -3,6 +3,8 @@
 use std::mem::zeroed;
 use std::ptr;
 
+use exitfailure::ExitFailure;
+
 use winapi::um::wincon::GetConsoleWindow;
 
 use winapi::shared::windef::*;
@@ -10,15 +12,10 @@ use winapi::shared::minwindef::*;
 use winapi::um::winuser::*;
 use winapi::um::shellapi::{Shell_NotifyIconW, NOTIFYICONDATAW, NIM_ADD, NIF_ICON, NIF_TIP};
 
-macro_rules! TEXT {
-    ($x:expr) => {{
-      use std::ffi::OsStr;
-      use std::os::windows::ffi::OsStrExt;
-      OsStr::new($x).encode_wide().chain(Some(0)).collect::<Vec<_>>()
-    }.as_ptr();}
-}
+use std::time::{SystemTime, UNIX_EPOCH};
 
 static mut LOCKED: bool = false;
+static mut TAKE_SHOT: bool = false;
 
 fn main() {
     unsafe {
@@ -27,6 +24,15 @@ fn main() {
 }
 
 unsafe fn setup() {
+
+    macro_rules! TEXT {
+        ($x:expr) => {{
+          use std::ffi::OsStr;
+          use std::os::windows::ffi::OsStrExt;
+          OsStr::new($x).encode_wide().chain(Some(0)).collect::<Vec<_>>()
+        }.as_ptr()}
+    }
+
     let title = TEXT!("CroissantageDefender");
     let class = TEXT!("CroissantageDefenderClass");
 
@@ -91,14 +97,41 @@ unsafe fn setup() {
 
     while (msg.message != WM_QUIT){
         if winapi::um::winuser::PeekMessageW(&mut msg, ptr::null_mut(), 0, 0, PM_REMOVE) == 1 {
-            // IDLE
+            // IDLE0
         }
         else
         {
             winapi::um::synchapi::Sleep(1);
         }
+
+        if TAKE_SHOT {
+            TAKE_SHOT = false;
+            take_shot();
+        }
     }
 
+}
+
+fn take_shot() -> Result<(), ExitFailure> {
+
+    let start = SystemTime::now();
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+
+    let mut camera = nokhwa::Camera::new_with(0, 640, 480, 30, nokhwa::FrameFormat::MJPEG, nokhwa::CaptureAPIBackend::Auto)?;
+
+    camera.open_stream()?;
+
+    let frame = camera.frame()?;
+
+    let path = format!("C:\\Users\\oginiaux\\Pictures\\croissantage\\screenshot_{:?}.jpeg", since_the_epoch);
+
+    let bytes = frame.as_raw();
+
+    image::save_buffer(path, bytes, frame.width(), frame.height(), image::ColorType::Rgb8).unwrap();
+
+    Ok(())
 }
 
 pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -112,6 +145,9 @@ pub unsafe extern "system" fn low_level_keyboard_proc(ncode: i32, wparam: WPARAM
         let lparams = *(lparam as LPKBDLLHOOKSTRUCT);
         if lparams.vkCode as i32 == VK_NUMPAD0 {
             LOCKED = !LOCKED;
+        }
+        else if LOCKED {
+            TAKE_SHOT = true;
         }
     }
 
