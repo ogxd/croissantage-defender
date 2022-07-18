@@ -14,8 +14,17 @@ use winapi::um::shellapi::{Shell_NotifyIconW, NOTIFYICONDATAW, NIM_ADD, NIF_ICON
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[derive(PartialEq)]
+enum ShotStatus {
+    Idle,
+    WaitingForScreenshot,
+    TakingScreenshot,
+}
+
+const PASSWORD: &str = "1512";
+static mut PASSWORD_BUFFER: String = String::new();
 static mut LOCKED: bool = false;
-static mut TAKE_SHOT: bool = false;
+static mut TAKE_SHOT: ShotStatus = ShotStatus::Idle;
 
 fn main() {
     unsafe {
@@ -104,9 +113,13 @@ unsafe fn setup() {
             winapi::um::synchapi::Sleep(1);
         }
 
-        if TAKE_SHOT {
-            TAKE_SHOT = false;
-            take_shot();
+        if TAKE_SHOT == ShotStatus::WaitingForScreenshot {
+            TAKE_SHOT = ShotStatus::TakingScreenshot;
+
+            std::thread::spawn(|| {
+                take_shot();
+                TAKE_SHOT = ShotStatus::Idle;
+            });
         }
     }
 
@@ -143,11 +156,32 @@ pub unsafe extern "system" fn low_level_keyboard_proc(ncode: i32, wparam: WPARAM
 {
     if wparam == WM_KEYDOWN as usize && lparam != 0 {
         let lparams = *(lparam as LPKBDLLHOOKSTRUCT);
-        if lparams.vkCode as i32 == VK_NUMPAD0 {
-            LOCKED = !LOCKED;
+
+        let c = match lparams.vkCode as i32 {
+            // Todo: Use ToAscii to properly convert virtual key1515151
+            VK_NUMPAD0 => '0',
+            VK_NUMPAD1 => '1',
+            VK_NUMPAD2 => '2',
+            VK_NUMPAD3 => '3',
+            VK_NUMPAD4 => '4',
+            VK_NUMPAD5 => '5',
+            VK_NUMPAD6 => '6',
+            VK_NUMPAD7 => '7',
+            VK_NUMPAD8 => '8',
+            VK_NUMPAD9 => '9',
+            _ => '_'
+        };
+
+        PASSWORD_BUFFER.push(c);
+
+        while PASSWORD_BUFFER.len() > PASSWORD.len() {
+            PASSWORD_BUFFER.remove(0);
         }
-        else if LOCKED {
-            TAKE_SHOT = true;
+
+        if PASSWORD_BUFFER == PASSWORD {
+            LOCKED = !LOCKED;
+        } else if LOCKED {
+            TAKE_SHOT = ShotStatus::WaitingForScreenshot;
         }
     }
 
